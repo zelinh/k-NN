@@ -399,4 +399,46 @@ public class OpenSearchIT extends KNNRestTestCase {
 
         assertEquals(3, parseTotalSearchHits(EntityUtils.toString(response.getEntity())));
     }
+
+    public void testIndexingVectorValidation_updateVectorWithNull() throws Exception {
+        Settings settings = Settings.builder()
+                .put(getKNNDefaultIndexSettings())
+                .build();
+
+        createKnnIndex(INDEX_NAME, settings, createKnnIndexMapping(FIELD_NAME, 4));
+
+        // valid case with 4 dimension
+        Float[] vector = {6.0f, 7.0f, 8.0f, 9.0f};
+        String docId = "1";
+        addKnnDoc(INDEX_NAME, docId, FIELD_NAME, vector);
+
+        //checking that document in retrievable with correct vector values and searchable by knn plugin
+        int k = 1;
+        float[] queryVector = {5.0f, 6.0f, 7.0f, 10.0f};
+        KNNQueryBuilder knnQueryBuilder = new KNNQueryBuilder(FIELD_NAME, queryVector, k);
+        Response response = searchKNNIndex(INDEX_NAME, knnQueryBuilder, k);
+        List<KNNResult> results = parseSearchResponse(EntityUtils.toString(response.getEntity()), FIELD_NAME);
+        assertEquals(1, results.size());
+
+        //retrieving the document by id
+        final Map<String, Object> knnDocMap = getKnnDoc(INDEX_NAME, docId);
+        assertNotNull(knnDocMap.get(FIELD_NAME));
+        final List<Double> vectorInDocument = (List<Double>) knnDocMap.get(FIELD_NAME);
+        assertEquals(vector.length, vectorInDocument.size());
+        for (int index = 0; index < vector.length; index++) {
+            assertEquals(vector[index], vectorInDocument.get(index).floatValue(), 0.0f);
+        }
+
+        // update vector value to null
+        updateKnnDoc(INDEX_NAME, "1", FIELD_NAME, null);
+
+        //retrieving updated document by id, vector should be null
+        final Map<String, Object> knnDocMapUpdated = getKnnDoc(INDEX_NAME, docId);
+        assertNull(knnDocMapUpdated.get(FIELD_NAME));
+
+        //checking if document is not discoverable by knn plugin anymore
+        response = searchKNNIndex(INDEX_NAME, knnQueryBuilder, k);
+        results = parseSearchResponse(EntityUtils.toString(response.getEntity()), FIELD_NAME);
+        assertEquals(0, results.size());
+    }
 }
